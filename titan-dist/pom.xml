@@ -3,7 +3,7 @@
     <parent>
         <groupId>com.thinkaurelius.titan</groupId>
         <artifactId>titan</artifactId>
-        <version>1.0.0</version>
+        <version>1.1.0</version>
         <relativePath>../pom.xml</relativePath>
     </parent>
     <packaging>pom</packaging>
@@ -37,11 +37,11 @@
         <pkg.release>1</pkg.release>
         <pkgtools.dir>${project.basedir}/..</pkgtools.dir>
 
-        <skipDefaultDistroIT>${it.skip}</skipDefaultDistroIT>
+        <!--<skipDefaultDistroIT>${it.skip}</skipDefaultDistroIT>-->
     </properties>
 
     <modules>
-        <module>titan-dist-hadoop-1</module>
+        <!--<module>titan-dist-hadoop-1</module>-->
         <!-- Hadoop 2 is blocked on TP3 support -->
         <!-- <module>titan-dist-hadoop-2</module> -->
     </modules>
@@ -105,17 +105,17 @@
             <classifier>tests</classifier>
             <scope>test</scope>
         </dependency>
-        <dependency>
-            <groupId>${project.groupId}</groupId>
-            <artifactId>titan-solr</artifactId>
-            <version>${project.version}</version>
-            <exclusions>
-                <exclusion>
-                    <artifactId>solr-core</artifactId>
-                    <groupId>org.apache.solr</groupId>
-                </exclusion>
-            </exclusions>
-        </dependency>
+        <!--<dependency>-->
+            <!--<groupId>${project.groupId}</groupId>-->
+            <!--<artifactId>titan-solr</artifactId>-->
+            <!--<version>${project.version}</version>-->
+            <!--<exclusions>-->
+                <!--<exclusion>-->
+                    <!--<artifactId>solr-core</artifactId>-->
+                    <!--<groupId>org.apache.solr</groupId>-->
+                <!--</exclusion>-->
+            <!--</exclusions>-->
+        <!--</dependency>-->
         <dependency>
             <groupId>${project.groupId}</groupId>
             <artifactId>titan-cassandra</artifactId>

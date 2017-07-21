@@ -14,14 +14,13 @@ import com.thinkaurelius.titan.diskstorage.keycolumnvalue.scan.StandardScanner;
 import com.thinkaurelius.titan.graphdb.configuration.GraphDatabaseConfiguration;
 import com.thinkaurelius.titan.graphdb.database.StandardTitanGraph;
 import com.thinkaurelius.titan.graphdb.util.WorkerPool;
-import org.apache.tinkerpop.gremlin.process.computer.ComputerResult;
-import org.apache.tinkerpop.gremlin.process.computer.GraphComputer;
-import org.apache.tinkerpop.gremlin.process.computer.MapReduce;
-import org.apache.tinkerpop.gremlin.process.computer.VertexProgram;
+import org.apache.tinkerpop.gremlin.process.computer.*;
 import org.apache.tinkerpop.gremlin.process.computer.traversal.TraversalVertexProgram;
 import org.apache.tinkerpop.gremlin.process.computer.util.DefaultComputerResult;
 import org.apache.tinkerpop.gremlin.process.computer.util.GraphComputerHelper;
+import org.apache.tinkerpop.gremlin.process.traversal.Traversal;
 import org.apache.tinkerpop.gremlin.process.traversal.TraversalSideEffects;
+import org.apache.tinkerpop.gremlin.structure.Edge;
 import org.apache.tinkerpop.gremlin.structure.Graph;
 import org.apache.tinkerpop.gremlin.structure.Vertex;
 import org.apache.tinkerpop.gremlin.structure.VertexProperty;
@@ -31,13 +30,7 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import javax.annotation.Nullable;
-import java.util.ArrayList;
-import java.util.HashMap;
-import java.util.HashSet;
-import java.util.List;
-import java.util.Map;
-import java.util.Optional;
-import java.util.Set;
+import java.util.*;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.Future;
 import java.util.concurrent.atomic.AtomicInteger;
@@ -50,7 +43,7 @@ public class FulgoraGraphComputer implements TitanGraphComputer {
     private static final Logger log =
             LoggerFactory.getLogger(FulgoraGraphComputer.class);
 
-    public static final Set<String> NON_PERSISTING_KEYS = ImmutableSet.of(TraversalSideEffects.SIDE_EFFECTS,
+    public static final Set<String> NON_PERSISTING_KEYS = ImmutableSet.of(
             TraversalVertexProgram.HALTED_TRAVERSERS);
 
     private VertexProgram<?> vertexProgram;
@@ -99,6 +92,18 @@ public class FulgoraGraphComputer implements TitanGraphComputer {
         Preconditions.checkArgument(threads > 0, "Invalid number of threads: %s", threads);
         numThreads = threads;
         return this;
+    }
+
+    @Override
+    public GraphComputer vertices(Traversal<Vertex, Vertex> vertexFilter)
+            throws IllegalArgumentException {
+        return null;
+    }
+
+    @Override
+    public GraphComputer edges(Traversal<Vertex, Edge> edgeFilter)
+            throws IllegalArgumentException {
+        return null;
     }
 
     @Override
@@ -249,14 +254,16 @@ public class FulgoraGraphComputer implements TitanGraphComputer {
             Graph resultgraph = graph;
             if (persistMode == Persist.NOTHING && resultGraphMode == ResultGraph.NEW) {
                 resultgraph = EmptyGraph.instance();
-            } else if (persistMode != Persist.NOTHING && vertexProgram != null && !vertexProgram.getElementComputeKeys().isEmpty()) {
+            } else if (persistMode != Persist.NOTHING && vertexProgram != null
+                    && !vertexProgram.getMemoryComputeKeys().isEmpty()) {
                 //First, create property keys in graph if they don't already exist
                 TitanManagement mgmt = graph.openManagement();
                 try {
-                    for (String key : vertexProgram.getElementComputeKeys()) {
-                        if (!mgmt.containsPropertyKey(key))
+
+                    for (MemoryComputeKey key : vertexProgram.getMemoryComputeKeys()) {
+                        if (!mgmt.containsPropertyKey(key.getKey()))
                             log.warn("Property key [{}] is not part of the schema and will be created. It is advised to initialize all keys.", key);
-                        mgmt.getOrCreatePropertyKey(key);
+                        mgmt.getOrCreatePropertyKey(key.getKey());
                     }
                     mgmt.commit();
                 } finally {
@@ -276,7 +283,8 @@ public class FulgoraGraphComputer implements TitanGraphComputer {
                 if (resultGraphMode == ResultGraph.ORIGINAL) {
                     AtomicInteger failures = new AtomicInteger(0);
                     try (WorkerPool workers = new WorkerPool(numThreads)) {
-                        List<Map.Entry<Long, Map<String, Object>>> subset = new ArrayList<>(writeBatchSize / vertexProgram.getElementComputeKeys().size());
+                        List<Map.Entry<Long, Map<String, Object>>> subset =
+                                new ArrayList<>(writeBatchSize / vertexProgram.getMemoryComputeKeys().size());
                         int currentSize = 0;
                         for (Map.Entry<Long, Map<String, Object>> entry : mutatedProperties.entrySet()) {
                             subset.add(entry);

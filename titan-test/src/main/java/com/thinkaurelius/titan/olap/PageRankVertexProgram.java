@@ -63,11 +63,6 @@ public class PageRankVertexProgram extends StaticVertexProgram<Double> {
     }
 
     @Override
-    public Set<String> getElementComputeKeys() {
-        return COMPUTE_KEYS;
-    }
-
-    @Override
     public void setup(Memory memory) {
     }
 

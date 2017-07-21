@@ -7,7 +7,10 @@ import com.google.common.collect.LinkedListMultimap;
 import com.google.common.collect.Multimap;
 import com.thinkaurelius.titan.core.Cardinality;
 import com.thinkaurelius.titan.core.TitanException;
-import com.thinkaurelius.titan.core.attribute.*;
+import com.thinkaurelius.titan.core.attribute.Cmp;
+import com.thinkaurelius.titan.core.attribute.Geo;
+import com.thinkaurelius.titan.core.attribute.Geoshape;
+import com.thinkaurelius.titan.core.attribute.Text;
 import com.thinkaurelius.titan.core.schema.Mapping;
 import com.thinkaurelius.titan.diskstorage.*;
 import com.thinkaurelius.titan.diskstorage.configuration.ConfigNamespace;
@@ -16,10 +19,6 @@ import com.thinkaurelius.titan.diskstorage.configuration.Configuration;
 import com.thinkaurelius.titan.diskstorage.indexing.*;
 import com.thinkaurelius.titan.diskstorage.util.DefaultTransaction;
 import com.thinkaurelius.titan.graphdb.configuration.PreInitializeConfigOptions;
-
-import static com.thinkaurelius.titan.diskstorage.configuration.ConfigOption.disallowEmpty;
-import static com.thinkaurelius.titan.graphdb.configuration.GraphDatabaseConfiguration.*;
-
 import com.thinkaurelius.titan.graphdb.database.serialize.AttributeUtil;
 import com.thinkaurelius.titan.graphdb.internal.Order;
 import com.thinkaurelius.titan.graphdb.query.TitanPredicate;
@@ -42,17 +41,15 @@ import org.elasticsearch.action.search.SearchResponse;
 import org.elasticsearch.action.update.UpdateRequestBuilder;
 import org.elasticsearch.client.Client;
 import org.elasticsearch.client.transport.TransportClient;
-import org.elasticsearch.common.settings.ImmutableSettings;
+import org.elasticsearch.common.settings.Settings;
 import org.elasticsearch.common.transport.InetSocketTransportAddress;
-import org.elasticsearch.common.unit.DistanceUnit;
 import org.elasticsearch.common.xcontent.XContentBuilder;
 import org.elasticsearch.common.xcontent.XContentFactory;
 import org.elasticsearch.index.query.*;
-import org.elasticsearch.indices.IndexMissingException;
 import org.elasticsearch.node.Node;
 import org.elasticsearch.node.NodeBuilder;
 import org.elasticsearch.rest.RestStatus;
-import org.elasticsearch.script.ScriptService;
+import org.elasticsearch.script.Script;
 import org.elasticsearch.search.SearchHit;
 import org.elasticsearch.search.SearchHits;
 import org.elasticsearch.search.sort.FieldSortBuilder;
@@ -64,10 +61,17 @@ import java.io.File;
 import java.io.FileInputStream;
 import java.io.FileNotFoundException;
 import java.io.IOException;
+import java.net.InetAddress;
+import java.net.UnknownHostException;
 import java.time.Instant;
 import java.util.*;
 import java.util.concurrent.TimeUnit;
 import java.util.stream.Collectors;
+
+import static com.thinkaurelius.titan.diskstorage.configuration.ConfigOption.disallowEmpty;
+import static com.thinkaurelius.titan.graphdb.configuration.GraphDatabaseConfiguration.*;
+
+//import org.elasticsearch.indices.IndexMissingException;
 
 /**
  * @author Matthias Broecheler (me@matthiasb.com)
@@ -169,7 +173,7 @@ public class ElasticSearchIndex implements IndexProvider {
             new ConfigNamespace(ES_CREATE_NS, "ext", "Overrides for arbitrary settings applied at index creation", true);
 
     private static final IndexFeatures ES_FEATURES = new IndexFeatures.Builder().supportsDocumentTTL()
-            .setDefaultStringMapping(Mapping.TEXT).supportedStringMappings(Mapping.TEXT, Mapping.TEXTSTRING, Mapping.STRING).setWildcardField("_all").supportsCardinality(Cardinality.SINGLE).supportsCardinality(Cardinality.LIST).supportsCardinality(Cardinality.SET).supportsNanoseconds().build();
+            .setDefaultStringMapping(Mapping.TEXT_EN).supportedStringMappings(Mapping.TEXT_CN, Mapping.TEXT_EN, Mapping.TEXTSTRING, Mapping.STRING).setWildcardField("_all").supportsCardinality(Cardinality.SINGLE).supportsCardinality(Cardinality.LIST).supportsCardinality(Cardinality.SET).supportsNanoseconds().build();
 
     public static final int HOST_PORT_DEFAULT = 9300;
 
@@ -212,7 +216,7 @@ public class ElasticSearchIndex implements IndexProvider {
      * of the index to check for existence or create.
      *
      * @param config the config for this ElasticSearchIndex
-     * @throws java.lang.IllegalArgumentException if the index could not be created
+     * @throws IllegalArgumentException if the index could not be created
      */
     private void checkForOrCreateIndex(Configuration config) {
         Preconditions.checkState(null != client);
@@ -221,7 +225,7 @@ public class ElasticSearchIndex implements IndexProvider {
         IndicesExistsResponse response = client.admin().indices().exists(new IndicesExistsRequest(indexName)).actionGet();
         if (!response.isExists()) {
 
-            ImmutableSettings.Builder settings = ImmutableSettings.settingsBuilder();
+            Settings.Builder settings = Settings.settingsBuilder();
 
             ElasticSearchSetup.applySettingsFromTitanConf(settings, config, ES_CREATE_EXTRAS_NS);
 
@@ -294,7 +298,7 @@ public class ElasticSearchIndex implements IndexProvider {
                     "Must either configure configuration file or base directory");
             if (config.has(INDEX_CONF_FILE)) {
                 String configFile = config.get(INDEX_CONF_FILE);
-                ImmutableSettings.Builder sb = ImmutableSettings.settingsBuilder();
+                Settings.Builder sb = Settings.settingsBuilder();
                 log.debug("Configuring ES from YML file [{}]", configFile);
                 FileInputStream fis = null;
                 try {
@@ -311,14 +315,14 @@ public class ElasticSearchIndex implements IndexProvider {
                 log.debug("Configuring ES with data directory [{}]", dataDirectory);
                 File f = new File(dataDirectory);
                 if (!f.exists()) f.mkdirs();
-                ImmutableSettings.Builder b = ImmutableSettings.settingsBuilder();
+                Settings.Builder b = Settings.settingsBuilder();
                 for (String sub : DATA_SUBDIRS) {
                     String subdir = dataDirectory + File.separator + sub;
                     f = new File(subdir);
                     if (!f.exists()) f.mkdirs();
                     b.put("path." + sub, subdir);
                 }
-                b.put("script.disable_dynamic", false);
+//                b.put("script.disable_dynamic", false);
                 b.put("indices.ttl.interval", "5s");
 
                 builder.settings(b.build());
@@ -333,7 +337,7 @@ public class ElasticSearchIndex implements IndexProvider {
 
         } else {
             log.debug("Configuring ES for network transport");
-            ImmutableSettings.Builder settings = ImmutableSettings.settingsBuilder();
+            Settings.Builder settings = Settings.settingsBuilder();
             if (config.has(CLUSTER_NAME)) {
                 String clustername = config.get(CLUSTER_NAME);
                 Preconditions.checkArgument(StringUtils.isNotBlank(clustername), "Invalid cluster name: %s", clustername);
@@ -343,8 +347,8 @@ public class ElasticSearchIndex implements IndexProvider {
             }
             log.debug("Transport sniffing enabled: {}", config.get(CLIENT_SNIFF));
             settings.put("client.transport.sniff", config.get(CLIENT_SNIFF));
-            settings.put("script.disable_dynamic", false);
-            TransportClient tc = new TransportClient(settings.build());
+//            settings.put("script.disable_dynamic", false);
+            TransportClient tc = TransportClient.builder().settings(settings.build()).build();
             int defaultPort = config.has(INDEX_PORT)?config.get(INDEX_PORT):HOST_PORT_DEFAULT;
             for (String host : config.get(INDEX_HOSTS)) {
                 String[] hostparts = host.split(":");
@@ -352,7 +356,11 @@ public class ElasticSearchIndex implements IndexProvider {
                 int hostport = defaultPort;
                 if (hostparts.length == 2) hostport = Integer.parseInt(hostparts[1]);
                 log.info("Configured remote host: {} : {}", hostname, hostport);
-                tc.addTransportAddress(new InetSocketTransportAddress(hostname, hostport));
+                try {
+                    tc.addTransportAddress(new InetSocketTransportAddress(InetAddress.getByName(hostname), hostport));
+                } catch (UnknownHostException e) {
+                    e.printStackTrace();
+                }
             }
             client = tc;
             node = null;
@@ -378,7 +386,7 @@ public class ElasticSearchIndex implements IndexProvider {
         XContentBuilder mapping;
         Class<?> dataType = information.getDataType();
         Mapping map = Mapping.getMapping(information);
-        Preconditions.checkArgument(map==Mapping.DEFAULT || AttributeUtil.isString(dataType),
+        Preconditions.checkArgument(map== Mapping.DEFAULT || AttributeUtil.isString(dataType),
                 "Specified illegal mapping [%s] for data type [%s]",map,dataType);
 
         try {
@@ -392,14 +400,14 @@ public class ElasticSearchIndex implements IndexProvider {
                     startObject(key);
 
             if (AttributeUtil.isString(dataType)) {
-                if (map==Mapping.DEFAULT) map=Mapping.TEXT;
+                if (map== Mapping.DEFAULT) map= Mapping.TEXT_EN;
                 log.debug("Registering string type for {} with mapping {}", key, map);
                 mapping.field("type", "string");
                 switch (map) {
                     case STRING:
                         mapping.field("index","not_analyzed");
                         break;
-                    case TEXT:
+                    case TEXT_EN:
                         //default, do nothing
                     	break;
                     case TEXTSTRING:
@@ -408,6 +416,18 @@ public class ElasticSearchIndex implements IndexProvider {
                         mapping.startObject(getDualMappingName(key));
                         mapping.field("type", "string");
                         mapping.field("index","not_analyzed");
+
+//                        "store": "no",
+//                            "term_vector": "with_positions_offsets",
+//                            "analyzer": "ik",
+//                            "search_analyzer": "ik"
+                        break;
+                    case TEXT_CN:
+                        mapping.field("type", "string");
+                        mapping.field("store", "yes");
+                        mapping.field("analyzer", "ik");
+                        mapping.field("search_analyzer", "ik");
+                        mapping.field("index", "analyzed");
                         break;
                     default: throw new AssertionError("Unexpected mapping: "+map);
                 }
@@ -454,8 +474,8 @@ public class ElasticSearchIndex implements IndexProvider {
         }
 
         try {
-            PutMappingResponse response = client.admin().indices().preparePutMapping(indexName).
-                    setIgnoreConflicts(false).setType(store).setSource(mapping).execute().actionGet();
+            PutMappingResponse response = client.admin().indices().preparePutMapping(indexName)
+                    .setType(store).setSource(mapping).execute().actionGet();
         } catch (Exception e) {
             throw convert(e);
         }
@@ -464,12 +484,12 @@ public class ElasticSearchIndex implements IndexProvider {
     private static Mapping getStringMapping(KeyInformation information) {
         assert AttributeUtil.isString(information.getDataType());
         Mapping map = Mapping.getMapping(information);
-        if (map==Mapping.DEFAULT) map = Mapping.TEXT;
+        if (map== Mapping.DEFAULT) map = Mapping.TEXT_EN;
         return map;
     }
 
     private static boolean hasDualStringMapping(KeyInformation information) {
-        return AttributeUtil.isString(information.getDataType()) && getStringMapping(information)==Mapping.TEXTSTRING;
+        return AttributeUtil.isString(information.getDataType()) && getStringMapping(information)== Mapping.TEXTSTRING;
     }
 
     public XContentBuilder getNewDocument(final List<IndexEntry> additions, KeyInformation.StoreRetriever informations, int ttl) throws BackendException {
@@ -565,7 +585,7 @@ public class ElasticSearchIndex implements IndexProvider {
                             brb.add(new DeleteRequest(indexName, storename, docid));
                         } else {
                             String script = getDeletionScript(informations, storename, mutation);
-                            brb.add(client.prepareUpdate(indexName, storename, docid).setScript(script, ScriptService.ScriptType.INLINE));
+                            brb.add(client.prepareUpdate(indexName, storename, docid).setScript(new Script(script)));
                             log.trace("Adding script {}", script);
                         }
 
@@ -584,7 +604,7 @@ public class ElasticSearchIndex implements IndexProvider {
 
                             boolean needUpsert = !mutation.hasDeletions();
                             String script = getAdditionScript(informations, storename, mutation);
-                            UpdateRequestBuilder update = client.prepareUpdate(indexName, storename, docid).setScript(script, ScriptService.ScriptType.INLINE);
+                            UpdateRequestBuilder update = client.prepareUpdate(indexName, storename, docid).setScript(new Script(script));
                             if (needUpsert) {
                                 XContentBuilder doc = getNewDocument(mutation.getAdditions(), informations.get(storename), ttl);
                                 update.setUpsert(doc);
@@ -729,7 +749,137 @@ public class ElasticSearchIndex implements IndexProvider {
         }
     }
 
-    public FilterBuilder getFilter(Condition<?> condition, KeyInformation.StoreRetriever informations) {
+//    public FilterBuilder getFilter(Condition<?> condition, KeyInformation.StoreRetriever informations) {
+//        if (condition instanceof PredicateCondition) {
+//            PredicateCondition<String, ?> atom = (PredicateCondition) condition;
+//            Object value = atom.getValue();
+//            String key = atom.getKey();
+//            TitanPredicate titanPredicate = atom.getPredicate();
+//            if (value instanceof Number) {
+//                Preconditions.checkArgument(titanPredicate instanceof Cmp, "Relation not supported on numeric types: " + titanPredicate);
+//                Cmp numRel = (Cmp) titanPredicate;
+//                Preconditions.checkArgument(value instanceof Number);
+//
+//                switch (numRel) {
+//                    case EQUAL:
+//                        return FilterBuilders.inFilter(key, value);
+//                    case NOT_EQUAL:
+//                        return FilterBuilders.notFilter(FilterBuilders.inFilter(key, value));
+//                    case LESS_THAN:
+//                        return FilterBuilders.rangeFilter(key).lt(value);
+//                    case LESS_THAN_EQUAL:
+//                        return FilterBuilders.rangeFilter(key).lte(value);
+//                    case GREATER_THAN:
+//                        return FilterBuilders.rangeFilter(key).gt(value);
+//                    case GREATER_THAN_EQUAL:
+//                        return FilterBuilders.rangeFilter(key).gte(value);
+//                    default:
+//                        throw new IllegalArgumentException("Unexpected relation: " + numRel);
+//                }
+//            } else if (value instanceof String) {
+//                Mapping map = getStringMapping(informations.get(key));
+//                String fieldName = key;
+//                if (map==Mapping.TEXT && !titanPredicate.toString().startsWith("CONTAINS"))
+//                    throw new IllegalArgumentException("Text mapped string values only support CONTAINS queries and not: " + titanPredicate);
+//                if (map==Mapping.STRING && titanPredicate.toString().startsWith("CONTAINS"))
+//                    throw new IllegalArgumentException("String mapped string values do not support CONTAINS queries: " + titanPredicate);
+//                if (map==Mapping.TEXTSTRING && !titanPredicate.toString().startsWith("CONTAINS"))
+//                    fieldName = getDualMappingName(key);
+//
+//                if (titanPredicate == Text.CONTAINS) {
+//                    value = ((String) value).toLowerCase();
+//                    AndFilterBuilder b = FilterBuilders.andFilter();
+//                    for (String term : Text.tokenize((String)value)) {
+//                        b.add(FilterBuilders.termFilter(fieldName, term));
+//                    }
+//                    return b;
+//                } else if (titanPredicate == Text.CONTAINS_PREFIX) {
+//                    value = ((String) value).toLowerCase();
+//                    return FilterBuilders.prefixFilter(fieldName, (String) value);
+//                } else if (titanPredicate == Text.CONTAINS_REGEX) {
+//                    value = ((String) value).toLowerCase();
+//                    return FilterBuilders.regexpFilter(fieldName, (String) value);
+//                } else if (titanPredicate == Text.PREFIX) {
+//                    return FilterBuilders.prefixFilter(fieldName, (String) value);
+//                } else if (titanPredicate == Text.REGEX) {
+//                    return FilterBuilders.regexpFilter(fieldName, (String) value);
+//                } else if (titanPredicate == Cmp.EQUAL) {
+//                    return FilterBuilders.termFilter(fieldName, (String) value);
+//                } else if (titanPredicate == Cmp.NOT_EQUAL) {
+//                    return FilterBuilders.notFilter(FilterBuilders.termFilter(fieldName, (String) value));
+//                } else
+//                    throw new IllegalArgumentException("Predicate is not supported for string value: " + titanPredicate);
+//            } else if (value instanceof Geoshape) {
+//                Preconditions.checkArgument(titanPredicate == Geo.WITHIN, "Relation is not supported for geo value: " + titanPredicate);
+//                Geoshape shape = (Geoshape) value;
+//                if (shape.getType() == Geoshape.Type.CIRCLE) {
+//                    Geoshape.Point center = shape.getPoint();
+//                    return FilterBuilders.geoDistanceFilter(key).lat(center.getLatitude()).lon(center.getLongitude()).distance(shape.getRadius(), DistanceUnit.KILOMETERS);
+//                } else if (shape.getType() == Geoshape.Type.BOX) {
+//                    Geoshape.Point southwest = shape.getPoint(0);
+//                    Geoshape.Point northeast = shape.getPoint(1);
+//                    return FilterBuilders.geoBoundingBoxFilter(key).bottomRight(southwest.getLatitude(), northeast.getLongitude()).topLeft(northeast.getLatitude(), southwest.getLongitude());
+//                } else
+//                    throw new IllegalArgumentException("Unsupported or invalid search shape type: " + shape.getType());
+//            } else if (value instanceof Date || value instanceof Instant) {
+//                Preconditions.checkArgument(titanPredicate instanceof Cmp, "Relation not supported on date types: " + titanPredicate);
+//                Cmp numRel = (Cmp) titanPredicate;
+//
+//                switch (numRel) {
+//                    case EQUAL:
+//                        return FilterBuilders.inFilter(key, value);
+//                    case NOT_EQUAL:
+//                        return FilterBuilders.notFilter(FilterBuilders.inFilter(key, value));
+//                    case LESS_THAN:
+//                        return FilterBuilders.rangeFilter(key).lt(value);
+//                    case LESS_THAN_EQUAL:
+//                        return FilterBuilders.rangeFilter(key).lte(value);
+//                    case GREATER_THAN:
+//                        return FilterBuilders.rangeFilter(key).gt(value);
+//                    case GREATER_THAN_EQUAL:
+//                        return FilterBuilders.rangeFilter(key).gte(value);
+//                    default:
+//                        throw new IllegalArgumentException("Unexpected relation: " + numRel);
+//                }
+//            } else if (value instanceof Boolean) {
+//                Cmp numRel = (Cmp) titanPredicate;
+//                switch (numRel) {
+//                    case EQUAL:
+//                        return FilterBuilders.inFilter(key, value);
+//                    case NOT_EQUAL:
+//                        return FilterBuilders.notFilter(FilterBuilders.inFilter(key, value));
+//                    default:
+//                        throw new IllegalArgumentException("Boolean types only support EQUAL or NOT_EQUAL");
+//                }
+//
+//            } else if (value instanceof UUID) {
+//                if (titanPredicate == Cmp.EQUAL) {
+//                    return FilterBuilders.termFilter(key, value);
+//                } else if (titanPredicate == Cmp.NOT_EQUAL) {
+//                    return FilterBuilders.notFilter(FilterBuilders.termFilter(key, value));
+//                } else {
+//                    throw new IllegalArgumentException("Only equal or not equal is supported for UUIDs: " + titanPredicate);
+//                }
+//            } else throw new IllegalArgumentException("Unsupported type: " + value);
+//        } else if (condition instanceof Not) {
+//            return FilterBuilders.notFilter(getFilter(((Not) condition).getChild(),informations));
+//        } else if (condition instanceof And) {
+//            AndFilterBuilder b = FilterBuilders.andFilter();
+//            for (Condition c : condition.getChildren()) {
+//                b.add(getFilter(c,informations));
+//            }
+//            return b;
+//        } else if (condition instanceof Or) {
+//            OrFilterBuilder b = FilterBuilders.orFilter();
+//            for (Condition c : condition.getChildren()) {
+//                b.add(getFilter(c,informations));
+//            }
+//            return b;
+//        } else throw new IllegalArgumentException("Invalid condition: " + condition);
+//    }
+
+
+    public QueryBuilder getFilter(Condition<?> condition, KeyInformation.StoreRetriever informations) {
         if (condition instanceof PredicateCondition) {
             PredicateCondition<String, ?> atom = (PredicateCondition) condition;
             Object value = atom.getValue();
@@ -742,120 +892,158 @@ public class ElasticSearchIndex implements IndexProvider {
 
                 switch (numRel) {
                     case EQUAL:
-                        return FilterBuilders.inFilter(key, value);
+                        return new TermQueryBuilder(key, value);
                     case NOT_EQUAL:
-                        return FilterBuilders.notFilter(FilterBuilders.inFilter(key, value));
+                        return new BoolQueryBuilder().mustNot(new TermQueryBuilder(key, value));
+//                                FilterBuilders.notFilter(FilterBuilders.inFilter(key, value));
                     case LESS_THAN:
-                        return FilterBuilders.rangeFilter(key).lt(value);
+//                        return new RangeQueryBuilder(key).lt(value);
+//                                FilterBuilders.rangeFilter(key).lt(value);
                     case LESS_THAN_EQUAL:
-                        return FilterBuilders.rangeFilter(key).lte(value);
+                        return new RangeQueryBuilder(key).lte(value);
+//                                FilterBuilders.rangeFilter(key).lte(value);
                     case GREATER_THAN:
-                        return FilterBuilders.rangeFilter(key).gt(value);
+                        return new RangeQueryBuilder(key).gt(value);
+//                                FilterBuilders.rangeFilter(key).gt(value);
                     case GREATER_THAN_EQUAL:
-                        return FilterBuilders.rangeFilter(key).gte(value);
+                        return new RangeQueryBuilder(key).gte(value);
+//                                FilterBuilders.rangeFilter(key).gte(value);
                     default:
                         throw new IllegalArgumentException("Unexpected relation: " + numRel);
                 }
-            } else if (value instanceof String) {
+            }
+            else if (value instanceof String) {
                 Mapping map = getStringMapping(informations.get(key));
                 String fieldName = key;
-                if (map==Mapping.TEXT && !titanPredicate.toString().startsWith("CONTAINS"))
-                    throw new IllegalArgumentException("Text mapped string values only support CONTAINS queries and not: " + titanPredicate);
-                if (map==Mapping.STRING && titanPredicate.toString().startsWith("CONTAINS"))
+                if (map== Mapping.TEXT_EN && !titanPredicate.toString().startsWith("CONTAINS"))
+                    throw new IllegalArgumentException("TEXT_EN mapped string values only support CONTAINS queries and not: " + titanPredicate);
+                if (map== Mapping.TEXT_CN && !titanPredicate.toString().startsWith("CONTAINS"))
+                    throw new IllegalArgumentException("TEXT_CN mapped string values only support CONTAINS queries and not: " + titanPredicate);
+                if (map== Mapping.STRING && titanPredicate.toString().startsWith("CONTAINS"))
                     throw new IllegalArgumentException("String mapped string values do not support CONTAINS queries: " + titanPredicate);
-                if (map==Mapping.TEXTSTRING && !titanPredicate.toString().startsWith("CONTAINS"))
+                if (map== Mapping.TEXTSTRING && !titanPredicate.toString().startsWith("CONTAINS"))
                     fieldName = getDualMappingName(key);
 
                 if (titanPredicate == Text.CONTAINS) {
                     value = ((String) value).toLowerCase();
-                    AndFilterBuilder b = FilterBuilders.andFilter();
-                    for (String term : Text.tokenize((String)value)) {
-                        b.add(FilterBuilders.termFilter(fieldName, term));
+//                    AndFilterBuilder b = FilterBuilders.andFilter();
+                    BoolQueryBuilder and = new BoolQueryBuilder();
+                    for (String term : Text.tokenize((String) value)) {
+//                        b.add(FilterBuilders.termFilter(fieldName, term));
+//                        and.must(new TermQueryBuilder(fieldName, term));
+                        and.must(new MatchQueryBuilder(fieldName, term));
                     }
-                    return b;
+                    return and;
                 } else if (titanPredicate == Text.CONTAINS_PREFIX) {
                     value = ((String) value).toLowerCase();
-                    return FilterBuilders.prefixFilter(fieldName, (String) value);
+//                    return FilterBuilders.prefixFilter(fieldName, (String) value);
+                    return new PrefixQueryBuilder(fieldName, (String) value);
                 } else if (titanPredicate == Text.CONTAINS_REGEX) {
                     value = ((String) value).toLowerCase();
-                    return FilterBuilders.regexpFilter(fieldName, (String) value);
+//                    return FilterBuilders.regexpFilter(fieldName, (String) value);
+                    return new RegexpQueryBuilder(fieldName, (String) value);
                 } else if (titanPredicate == Text.PREFIX) {
-                    return FilterBuilders.prefixFilter(fieldName, (String) value);
+//                    return FilterBuilders.prefixFilter(fieldName, (String) value);
+                    return new PrefixQueryBuilder(fieldName, (String) value);
                 } else if (titanPredicate == Text.REGEX) {
-                    return FilterBuilders.regexpFilter(fieldName, (String) value);
+//                    return FilterBuilders.regexpFilter(fieldName, (String) value);
+                    return new RegexpQueryBuilder(fieldName, (String) value);
                 } else if (titanPredicate == Cmp.EQUAL) {
-                    return FilterBuilders.termFilter(fieldName, (String) value);
+//                    return FilterBuilders.termFilter(fieldName, (String) value);
+                    return new TermQueryBuilder(fieldName, (String) value);
                 } else if (titanPredicate == Cmp.NOT_EQUAL) {
-                    return FilterBuilders.notFilter(FilterBuilders.termFilter(fieldName, (String) value));
+//                    return FilterBuilders.notFilter(FilterBuilders.termFilter(fieldName, (String) value));
+                    return new BoolQueryBuilder().mustNot(new TermQueryBuilder(key, value));
                 } else
                     throw new IllegalArgumentException("Predicate is not supported for string value: " + titanPredicate);
-            } else if (value instanceof Geoshape) {
-                Preconditions.checkArgument(titanPredicate == Geo.WITHIN, "Relation is not supported for geo value: " + titanPredicate);
-                Geoshape shape = (Geoshape) value;
-                if (shape.getType() == Geoshape.Type.CIRCLE) {
-                    Geoshape.Point center = shape.getPoint();
-                    return FilterBuilders.geoDistanceFilter(key).lat(center.getLatitude()).lon(center.getLongitude()).distance(shape.getRadius(), DistanceUnit.KILOMETERS);
-                } else if (shape.getType() == Geoshape.Type.BOX) {
-                    Geoshape.Point southwest = shape.getPoint(0);
-                    Geoshape.Point northeast = shape.getPoint(1);
-                    return FilterBuilders.geoBoundingBoxFilter(key).bottomRight(southwest.getLatitude(), northeast.getLongitude()).topLeft(northeast.getLatitude(), southwest.getLongitude());
-                } else
-                    throw new IllegalArgumentException("Unsupported or invalid search shape type: " + shape.getType());
-            } else if (value instanceof Date || value instanceof Instant) {
+            }
+//            else if (value instanceof Geoshape) {
+//                Preconditions.checkArgument(titanPredicate == Geo.WITHIN, "Relation is not supported for geo value: " + titanPredicate);
+//                Geoshape shape = (Geoshape) value;
+//                if (shape.getType() == Geoshape.Type.CIRCLE) {
+//                    Geoshape.Point center = shape.getPoint();
+//                    return FilterBuilders.geoDistanceFilter(key).lat(center.getLatitude()).lon(center.getLongitude()).distance(shape.getRadius(), DistanceUnit.KILOMETERS);
+//                } else if (shape.getType() == Geoshape.Type.BOX) {
+//                    Geoshape.Point southwest = shape.getPoint(0);
+//                    Geoshape.Point northeast = shape.getPoint(1);
+//                    return FilterBuilders.geoBoundingBoxFilter(key).bottomRight(southwest.getLatitude(), northeast.getLongitude()).topLeft(northeast.getLatitude(), southwest.getLongitude());
+//                } else
+//                    throw new IllegalArgumentException("Unsupported or invalid search shape type: " + shape.getType());
+//            }
+            else if (value instanceof Date || value instanceof Instant) {
                 Preconditions.checkArgument(titanPredicate instanceof Cmp, "Relation not supported on date types: " + titanPredicate);
                 Cmp numRel = (Cmp) titanPredicate;
 
                 switch (numRel) {
+
                     case EQUAL:
-                        return FilterBuilders.inFilter(key, value);
+                        return new TermQueryBuilder(key, value);
                     case NOT_EQUAL:
-                        return FilterBuilders.notFilter(FilterBuilders.inFilter(key, value));
+                        return new BoolQueryBuilder().mustNot(new TermQueryBuilder(key, value));
+//                                FilterBuilders.notFilter(FilterBuilders.inFilter(key, value));
                     case LESS_THAN:
-                        return FilterBuilders.rangeFilter(key).lt(value);
+                        return new RangeQueryBuilder(key).lt(value);
+//                                FilterBuilders.rangeFilter(key).lt(value);
                     case LESS_THAN_EQUAL:
-                        return FilterBuilders.rangeFilter(key).lte(value);
+                        return new RangeQueryBuilder(key).lte(value);
+//                                FilterBuilders.rangeFilter(key).lte(value);
                     case GREATER_THAN:
-                        return FilterBuilders.rangeFilter(key).gt(value);
+                        return new RangeQueryBuilder(key).gt(value);
+//                                FilterBuilders.rangeFilter(key).gt(value);
                     case GREATER_THAN_EQUAL:
-                        return FilterBuilders.rangeFilter(key).gte(value);
+                        return new RangeQueryBuilder(key).gte(value);
+//                                FilterBuilders.rangeFilter(key).gte(value);
                     default:
                         throw new IllegalArgumentException("Unexpected relation: " + numRel);
                 }
-            } else if (value instanceof Boolean) {
+            }
+            else if (value instanceof Boolean) {
                 Cmp numRel = (Cmp) titanPredicate;
                 switch (numRel) {
                     case EQUAL:
-                        return FilterBuilders.inFilter(key, value);
+                        return new TermQueryBuilder(key, value);
                     case NOT_EQUAL:
-                        return FilterBuilders.notFilter(FilterBuilders.inFilter(key, value));
+                        return new BoolQueryBuilder().mustNot(new TermQueryBuilder(key, value));
+//                                FilterBuilders.notFilter(FilterBuilders.inFilter(key, value));
                     default:
                         throw new IllegalArgumentException("Boolean types only support EQUAL or NOT_EQUAL");
                 }
 
-            } else if (value instanceof UUID) {
+            }
+            else if (value instanceof UUID) {
                 if (titanPredicate == Cmp.EQUAL) {
-                    return FilterBuilders.termFilter(key, value);
+                    return new TermQueryBuilder(key, value);
+//                    return FilterBuilders.termFilter(key, value);
                 } else if (titanPredicate == Cmp.NOT_EQUAL) {
-                    return FilterBuilders.notFilter(FilterBuilders.termFilter(key, value));
+                    return new BoolQueryBuilder().mustNot(new TermQueryBuilder(key, value));
+//                    return FilterBuilders.notFilter(FilterBuilders.termFilter(key, value));
                 } else {
                     throw new IllegalArgumentException("Only equal or not equal is supported for UUIDs: " + titanPredicate);
                 }
             } else throw new IllegalArgumentException("Unsupported type: " + value);
         } else if (condition instanceof Not) {
-            return FilterBuilders.notFilter(getFilter(((Not) condition).getChild(),informations));
+            return new BoolQueryBuilder().mustNot(getFilter(((Not) condition).getChild(),informations));
         } else if (condition instanceof And) {
-            AndFilterBuilder b = FilterBuilders.andFilter();
+//            AndFilterBuilder b = FilterBuilders.andFilter();
+            BoolQueryBuilder and = new BoolQueryBuilder();
             for (Condition c : condition.getChildren()) {
-                b.add(getFilter(c,informations));
+                and.must(getFilter(c, informations));
             }
-            return b;
-        } else if (condition instanceof Or) {
-            OrFilterBuilder b = FilterBuilders.orFilter();
+            return and;
+        }
+        else if (condition instanceof Or) {
+//            OrFilterBuilder b = FilterBuilders.orFilter();
+//            for (Condition c : condition.getChildren()) {
+//                b.add(getFilter(c,informations));
+//            }
+//            return b;
+            BoolQueryBuilder and = new BoolQueryBuilder();
             for (Condition c : condition.getChildren()) {
-                b.add(getFilter(c,informations));
+                and.should(getFilter(c, informations));
             }
-            return b;
+            return and;
         } else throw new IllegalArgumentException("Invalid condition: " + condition);
+
     }
 
     @Override
@@ -957,7 +1145,7 @@ public class ElasticSearchIndex implements IndexProvider {
     public boolean supports(KeyInformation information, TitanPredicate titanPredicate) {
         Class<?> dataType = information.getDataType();
         Mapping mapping = Mapping.getMapping(information);
-        if (mapping!=Mapping.DEFAULT && !AttributeUtil.isString(dataType)) return false;
+        if (mapping!= Mapping.DEFAULT && !AttributeUtil.isString(dataType)) return false;
 
         if (Number.class.isAssignableFrom(dataType)) {
             if (titanPredicate instanceof Cmp) return true;
@@ -966,19 +1154,21 @@ public class ElasticSearchIndex implements IndexProvider {
         } else if (AttributeUtil.isString(dataType)) {
             switch(mapping) {
                 case DEFAULT:
-                case TEXT:
+                case TEXT_CN:
+                    return titanPredicate == Text.CONTAINS || titanPredicate == Text.CONTAINS_PREFIX || titanPredicate == Text.CONTAINS_REGEX;
+                case TEXT_EN:
                     return titanPredicate == Text.CONTAINS || titanPredicate == Text.CONTAINS_PREFIX || titanPredicate == Text.CONTAINS_REGEX;
                 case STRING:
-                    return titanPredicate == Cmp.EQUAL || titanPredicate==Cmp.NOT_EQUAL || titanPredicate==Text.REGEX || titanPredicate==Text.PREFIX;
+                    return titanPredicate == Cmp.EQUAL || titanPredicate== Cmp.NOT_EQUAL || titanPredicate== Text.REGEX || titanPredicate== Text.PREFIX;
                 case TEXTSTRING:
-                    return (titanPredicate instanceof Text) || titanPredicate == Cmp.EQUAL || titanPredicate==Cmp.NOT_EQUAL;
+                    return (titanPredicate instanceof Text) || titanPredicate == Cmp.EQUAL || titanPredicate== Cmp.NOT_EQUAL;
             }
         } else if (dataType == Date.class || dataType == Instant.class) {
             if (titanPredicate instanceof Cmp) return true;
         } else if (dataType == Boolean.class) {
             return titanPredicate == Cmp.EQUAL || titanPredicate == Cmp.NOT_EQUAL;
         } else if (dataType == UUID.class) {
-            return titanPredicate == Cmp.EQUAL || titanPredicate==Cmp.NOT_EQUAL;
+            return titanPredicate == Cmp.EQUAL || titanPredicate== Cmp.NOT_EQUAL;
         }
         return false;
     }
@@ -989,10 +1179,10 @@ public class ElasticSearchIndex implements IndexProvider {
         Class<?> dataType = information.getDataType();
         Mapping mapping = Mapping.getMapping(information);
         if (Number.class.isAssignableFrom(dataType) || dataType == Geoshape.class || dataType == Date.class || dataType== Instant.class || dataType == Boolean.class || dataType == UUID.class) {
-            if (mapping==Mapping.DEFAULT) return true;
+            if (mapping== Mapping.DEFAULT) return true;
         } else if (AttributeUtil.isString(dataType)) {
-            if (mapping==Mapping.DEFAULT || mapping==Mapping.STRING
-                    || mapping==Mapping.TEXT || mapping==Mapping.TEXTSTRING) return true;
+            if (mapping== Mapping.DEFAULT || mapping== Mapping.STRING
+                    || mapping== Mapping.TEXT_CN || mapping== Mapping.TEXT_EN || mapping== Mapping.TEXTSTRING) return true;
         }
         return false;
     }
@@ -1031,7 +1221,7 @@ public class ElasticSearchIndex implements IndexProvider {
                         .delete(new DeleteIndexRequest(indexName)).actionGet();
                 // We wait for one second to let ES delete the river
                 Thread.sleep(1000);
-            } catch (IndexMissingException e) {
+            } catch (Exception e) {
                 // Index does not exist... Fine
             }
         } catch (Exception e) {

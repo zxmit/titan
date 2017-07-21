@@ -21,7 +21,9 @@ import java.util.Set;
  * @author Marko A. Rodriguez (http://markorodriguez.com)
  * @author Matthias Broecheler (http://matthiasb.com)
  */
-public class TitanLocalQueryOptimizerStrategy extends AbstractTraversalStrategy<TraversalStrategy.VendorOptimizationStrategy> implements TraversalStrategy.VendorOptimizationStrategy {
+public class TitanLocalQueryOptimizerStrategy
+        extends AbstractTraversalStrategy<TraversalStrategy.ProviderOptimizationStrategy>
+        implements TraversalStrategy.ProviderOptimizationStrategy {
 
     private static final TitanLocalQueryOptimizerStrategy INSTANCE = new TitanLocalQueryOptimizerStrategy();
 
@@ -37,7 +39,7 @@ public class TitanLocalQueryOptimizerStrategy extends AbstractTraversalStrategy<
 
         //If this is a compute graph then we can't apply local traversal optimisation at this stage.
         StandardTitanGraph titanGraph = graph instanceof StandardTitanTx ? ((StandardTitanTx) graph).getGraph() : (StandardTitanGraph) graph;
-        final boolean useMultiQuery = traversal.getEngine().isStandard() && titanGraph.getConfiguration().useMultiQuery();
+        final boolean useMultiQuery =  titanGraph.getConfiguration().useMultiQuery();
 
         /*
                 ====== VERTEX STEP ======
@@ -141,11 +143,12 @@ public class TitanLocalQueryOptimizerStrategy extends AbstractTraversalStrategy<
         }
     }
 
-    private static final Set<Class<? extends VendorOptimizationStrategy>> PRIORS = Collections.singleton(AdjacentVertexFilterOptimizerStrategy.class);
+    private static final Set<Class<? extends TraversalStrategy.ProviderOptimizationStrategy>> PRIORS =
+            Collections.singleton(AdjacentVertexFilterOptimizerStrategy.class);
 
 
     @Override
-    public Set<Class<? extends VendorOptimizationStrategy>> applyPrior() {
+    public Set<Class<? extends TraversalStrategy.ProviderOptimizationStrategy>> applyPrior() {
         return PRIORS;
     }
 

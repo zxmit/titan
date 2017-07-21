@@ -174,7 +174,7 @@ public abstract class OLAPTest extends TitanGraphBaseTest {
         assertNull(getV(tx,v3id));
         v1 = getV(tx, v1id);
         assertNotNull(v1);
-        assertEquals(v3id,v1.query().direction(Direction.IN).labels("knows").vertices().iterator().next().longId());
+        assertEquals(v3id,v1.query().direction(Direction.IN).labels("knows").vertices().iterator().next());
         tx.commit();
         mgmt.commit();
 
@@ -266,7 +266,8 @@ public abstract class OLAPTest extends TitanGraphBaseTest {
             for (TitanVertex v : gview.query().vertices()) {
                 long degree2 = ((Integer)v.value(DegreeCounter.DEGREE)).longValue();
                 long actualDegree2 = 0;
-                for (TitanVertex w : v.query().direction(Direction.OUT).vertices()) {
+                Iterable<TitanVertex> it = v.query().direction(Direction.OUT).vertices();
+                for (TitanVertex w : it) {
                     actualDegree2 += Iterables.size(w.query().direction(Direction.OUT).vertices());
                 }
                 assertEquals(actualDegree2,degree2);
@@ -367,11 +368,6 @@ public abstract class OLAPTest extends TitanGraphBaseTest {
         @Override
         public boolean terminate(Memory memory) {
             return memory.getIteration()>=length;
-        }
-
-        @Override
-        public Set<String> getElementComputeKeys() {
-            return ImmutableSet.of(DEGREE);
         }
 
         @Override

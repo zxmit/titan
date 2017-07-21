@@ -9,10 +9,7 @@ import com.thinkaurelius.titan.core.TitanVertexProperty;
 import com.thinkaurelius.titan.diskstorage.EntryList;
 import com.thinkaurelius.titan.graphdb.idmanagement.IDManager;
 import com.thinkaurelius.titan.graphdb.vertices.PreloadedVertex;
-import org.apache.tinkerpop.gremlin.process.computer.MessageCombiner;
-import org.apache.tinkerpop.gremlin.process.computer.MessageScope;
-import org.apache.tinkerpop.gremlin.process.computer.Messenger;
-import org.apache.tinkerpop.gremlin.process.computer.VertexProgram;
+import org.apache.tinkerpop.gremlin.process.computer.*;
 import org.apache.tinkerpop.gremlin.structure.VertexProperty;
 import org.cliffc.high_scale_lib.NonBlockingHashMapLong;
 
@@ -42,8 +39,17 @@ public class FulgoraVertexMemory<M> {
         partitionVertices = new NonBlockingHashMapLong<>(64);
         this.idManager = idManager;
         this.combiner = FulgoraUtil.getMessageCombiner(vertexProgram);
-        this.elementKeyMap = getIdMap(vertexProgram.getElementComputeKeys());
+        this.elementKeyMap = getIdMapWrapper(vertexProgram.getMemoryComputeKeys());
         this.previousScopes = ImmutableMap.of();
+    }
+
+    private static Map<String,Integer> getIdMapWrapper(Iterable<MemoryComputeKey> elements) {
+        ImmutableMap.Builder<String, Integer> mb = ImmutableMap.builder();
+        int i=0;
+        for(MemoryComputeKey key  : elements) {
+            mb.put(key.getKey(), i++);
+        }
+        return mb.build();
     }
 
     private VertexState<M> get(long vertexId, boolean create) {

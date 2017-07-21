@@ -66,7 +66,7 @@ public class IndexFeatures {
     public static class Builder {
 
         private boolean supportsDocumentTTL = false;
-        private Mapping defaultStringMapping = Mapping.TEXT;
+        private Mapping defaultStringMapping = Mapping.TEXT_EN;
         private Set<Mapping> supportedMappings = Sets.newHashSet();
         private Set<Cardinality> supportedCardinalities = Sets.newHashSet();
         private String wildcardField = "*";

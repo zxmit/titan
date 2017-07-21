@@ -77,11 +77,11 @@ public abstract class IndexProviderTest {
 
     public static final Map<String,KeyInformation> getMapping(final IndexFeatures indexFeatures) {
         Preconditions.checkArgument(indexFeatures.supportsStringMapping(Mapping.TEXTSTRING) ||
-                (indexFeatures.supportsStringMapping(Mapping.TEXT) && indexFeatures.supportsStringMapping(Mapping.STRING)),
+                        (indexFeatures.supportsStringMapping(Mapping.TEXT_EN) && indexFeatures.supportsStringMapping(Mapping.STRING)),
                 "Index must support string and text mapping");
         return new HashMap<String,KeyInformation>() {{
             put(TEXT,new StandardKeyInformation(String.class, Cardinality.SINGLE, new Parameter("mapping",
-                    indexFeatures.supportsStringMapping(Mapping.TEXT)?Mapping.TEXT:Mapping.TEXTSTRING)));
+                    indexFeatures.supportsStringMapping(Mapping.TEXT_EN)?Mapping.TEXT_EN:Mapping.TEXTSTRING)));
             put(TIME,new StandardKeyInformation(Long.class, Cardinality.SINGLE));
             put(WEIGHT,new StandardKeyInformation(Double.class, Cardinality.SINGLE, new Parameter("mapping",Mapping.DEFAULT)));
             put(LOCATION,new StandardKeyInformation(Geoshape.class, Cardinality.SINGLE));
@@ -227,7 +227,7 @@ public abstract class IndexProviderTest {
             for (TitanPredicate tp : new Text[]{Text.PREFIX, Text.REGEX}) {
                 try {
                     assertEquals(0, tx.query(new IndexQuery(store, PredicateCondition.of(TEXT, tp, "tzubull"))).size());
-                    if (indexFeatures.supportsStringMapping(Mapping.TEXT)) fail();
+                    if (indexFeatures.supportsStringMapping(Mapping.TEXT_EN)) fail();
                 } catch (IllegalArgumentException e) {}
             }
             //String
@@ -415,11 +415,11 @@ public abstract class IndexProviderTest {
     @Test
     public void testCommonSupport() {
         assertTrue(index.supports(of(String.class, Cardinality.SINGLE)));
-        assertTrue(index.supports(of(String.class, Cardinality.SINGLE, new Parameter("mapping", Mapping.TEXT))));
+        assertTrue(index.supports(of(String.class, Cardinality.SINGLE, new Parameter("mapping", Mapping.TEXT_EN))));
         assertTrue(index.supports(of(String.class, Cardinality.SINGLE, new Parameter("mapping",Mapping.STRING))));
 
         assertTrue(index.supports(of(Double.class, Cardinality.SINGLE)));
-        assertFalse(index.supports(of(Double.class, Cardinality.SINGLE, new Parameter("mapping",Mapping.TEXT))));
+        assertFalse(index.supports(of(Double.class, Cardinality.SINGLE, new Parameter("mapping",Mapping.TEXT_EN))));
 
         assertTrue(index.supports(of(Long.class, Cardinality.SINGLE)));
         assertTrue(index.supports(of(Long.class, Cardinality.SINGLE, new Parameter("mapping",Mapping.DEFAULT))));
@@ -435,7 +435,7 @@ public abstract class IndexProviderTest {
         assertTrue(index.supports(of(Double.class, Cardinality.SINGLE), Cmp.GREATER_THAN_EQUAL));
         assertTrue(index.supports(of(Double.class, Cardinality.SINGLE), Cmp.LESS_THAN));
         assertTrue(index.supports(of(Double.class, Cardinality.SINGLE, new Parameter("mapping",Mapping.DEFAULT)), Cmp.LESS_THAN));
-        assertFalse(index.supports(of(Double.class, Cardinality.SINGLE, new Parameter("mapping",Mapping.TEXT)), Cmp.LESS_THAN));
+        assertFalse(index.supports(of(Double.class, Cardinality.SINGLE, new Parameter("mapping",Mapping.TEXT_EN)), Cmp.LESS_THAN));
         assertTrue(index.supports(of(Geoshape.class, Cardinality.SINGLE), Geo.WITHIN));
 
         assertFalse(index.supports(of(Double.class, Cardinality.SINGLE), Geo.INTERSECT));
@@ -645,11 +645,11 @@ public abstract class IndexProviderTest {
                 tx.delete(defStore, defDoc, TEXT, ImmutableMap.of(), true);
             }
         }, new TxJob() {
-             @Override
-             public void run(IndexTransaction tx) {
-                 tx.delete(defStore, defDoc, TEXT, defTextValue, false);
-             }
-         });
+            @Override
+            public void run(IndexTransaction tx) {
+                tx.delete(defStore, defDoc, TEXT, defTextValue, false);
+            }
+        });
 
         // Document must not exist
         checkResult(new IndexQuery(defStore, PredicateCondition.of(TEXT, Text.CONTAINS, "brown")),null);
@@ -678,16 +678,16 @@ public abstract class IndexProviderTest {
         final String nameValue = "jm keynes";
 
         runConflictingTx(new TxJob() {
-                             @Override
-                             public void run(IndexTransaction tx) {
-                                 tx.delete(defStore, defDoc, TEXT, ImmutableMap.of(), true);
-                             }
-                         }, new TxJob() {
-                             @Override
-                             public void run(IndexTransaction tx) {
-                                 tx.add(defStore, defDoc, NAME, nameValue, false);
-                             }
-                         });
+            @Override
+            public void run(IndexTransaction tx) {
+                tx.delete(defStore, defDoc, TEXT, ImmutableMap.of(), true);
+            }
+        }, new TxJob() {
+            @Override
+            public void run(IndexTransaction tx) {
+                tx.add(defStore, defDoc, NAME, nameValue, false);
+            }
+        });
 
         // TEXT field should have been deleted when document was
         checkResult(new IndexQuery(defStore, PredicateCondition.of(TEXT, Text.CONTAINS, "brown")),null);
@@ -720,18 +720,18 @@ public abstract class IndexProviderTest {
     public void testConflictingAdd() throws Exception {
         final String doc2 = "docy2";
         runConflictingTx(new TxJob() {
-                             @Override
-                             public void run(IndexTransaction tx) {
-                                 Multimap<String, Object> initialProps = ImmutableMultimap.<String, Object>of(TEXT, "sugar sugar");
-                                 add(defStore, doc2, initialProps, true);
-                             }
-                         }, new TxJob() {
-                             @Override
-                             public void run(IndexTransaction tx) {
-                                 Multimap<String, Object> initialProps = ImmutableMultimap.<String, Object>of(TEXT, "honey honey");
-                                 add(defStore, doc2, initialProps, true);
-                             }
-                         });
+            @Override
+            public void run(IndexTransaction tx) {
+                Multimap<String, Object> initialProps = ImmutableMultimap.<String, Object>of(TEXT, "sugar sugar");
+                add(defStore, doc2, initialProps, true);
+            }
+        }, new TxJob() {
+            @Override
+            public void run(IndexTransaction tx) {
+                Multimap<String, Object> initialProps = ImmutableMultimap.<String, Object>of(TEXT, "honey honey");
+                add(defStore, doc2, initialProps, true);
+            }
+        });
 
         //only last write should be visible
         checkResult(new IndexQuery(defStore, PredicateCondition.of(TEXT, Text.CONTAINS, "brown")),defDoc);
@@ -742,18 +742,18 @@ public abstract class IndexProviderTest {
     @Test
     public void testLastWriteWins() throws Exception {
         runConflictingTx(new TxJob() {
-                             @Override
-                             public void run(IndexTransaction tx) {
-                                 tx.delete(defStore, defDoc, TEXT, defTextValue, false);
-                                 tx.add(defStore, defDoc, TEXT, "sugar sugar", false);
-                             }
-                         }, new TxJob() {
-                             @Override
-                             public void run(IndexTransaction tx) {
-                                 tx.delete(defStore, defDoc, TEXT, defTextValue, false);
-                                 tx.add(defStore, defDoc, TEXT, "honey honey", false);
-                             }
-                         });
+            @Override
+            public void run(IndexTransaction tx) {
+                tx.delete(defStore, defDoc, TEXT, defTextValue, false);
+                tx.add(defStore, defDoc, TEXT, "sugar sugar", false);
+            }
+        }, new TxJob() {
+            @Override
+            public void run(IndexTransaction tx) {
+                tx.delete(defStore, defDoc, TEXT, defTextValue, false);
+                tx.add(defStore, defDoc, TEXT, "honey honey", false);
+            }
+        });
 
         //only last write should be visible
         checkResult(new IndexQuery(defStore, PredicateCondition.of(TEXT, Text.CONTAINS, "brown")),null);
@@ -770,16 +770,16 @@ public abstract class IndexProviderTest {
     public void testUpdateAddition() throws Exception {
         final String revisedText = "its a sunny day";
         runConflictingTx(new TxJob() {
-                             @Override
-                             public void run(IndexTransaction tx) {
-                                 tx.add(defStore, defDoc, TEXT, revisedText, false);
-                             }
-                         }, new TxJob() {
-                             @Override
-                             public void run(IndexTransaction tx) {
-                                 //do nothing
-                             }
-                         });
+            @Override
+            public void run(IndexTransaction tx) {
+                tx.add(defStore, defDoc, TEXT, revisedText, false);
+            }
+        }, new TxJob() {
+            @Override
+            public void run(IndexTransaction tx) {
+                //do nothing
+            }
+        });
 
         // Should no longer return old text
         checkResult(new IndexQuery(defStore, PredicateCondition.of(TEXT, Text.CONTAINS, "brown")), null);
@@ -795,16 +795,16 @@ public abstract class IndexProviderTest {
     @Test
     public void testUpdateDeletion() throws Exception {
         runConflictingTx(new TxJob() {
-                             @Override
-                             public void run(IndexTransaction tx) {
-                                 tx.delete(defStore, defDoc, TEXT, ImmutableMap.of(), false);
-                             }
-                         }, new TxJob() {
-                             @Override
-                             public void run(IndexTransaction tx) {
-                                 //do nothing
-                             }
-                         });
+            @Override
+            public void run(IndexTransaction tx) {
+                tx.delete(defStore, defDoc, TEXT, ImmutableMap.of(), false);
+            }
+        }, new TxJob() {
+            @Override
+            public void run(IndexTransaction tx) {
+                //do nothing
+            }
+        });
 
         // Should no longer return deleted text
         checkResult(new IndexQuery(defStore, PredicateCondition.of(TEXT, Text.CONTAINS, "brown")),null);

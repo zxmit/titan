@@ -1,9 +1,6 @@
 package com.thinkaurelius.titan.graphdb.olap.computer;
 
-import org.apache.tinkerpop.gremlin.process.computer.GraphComputer;
-import org.apache.tinkerpop.gremlin.process.computer.MapReduce;
-import org.apache.tinkerpop.gremlin.process.computer.Memory;
-import org.apache.tinkerpop.gremlin.process.computer.VertexProgram;
+import org.apache.tinkerpop.gremlin.process.computer.*;
 import org.apache.tinkerpop.gremlin.process.computer.util.MemoryHelper;
 import org.apache.tinkerpop.gremlin.structure.util.StringFactory;
 
@@ -26,13 +23,14 @@ public class FulgoraMemory implements Memory.Admin {
     private final AtomicInteger iteration = new AtomicInteger(0);
     private final AtomicLong runtime = new AtomicLong(0l);
 
-    public FulgoraMemory(final VertexProgram<?> vertexProgram, final Set<MapReduce> mapReducers) {
+    public FulgoraMemory(final VertexProgram<?> vertexProgram,
+                         final Set<MapReduce> mapReducers) {
         this.currentMap = new ConcurrentHashMap<>();
         this.previousMap = new ConcurrentHashMap<>();
         if (null != vertexProgram) {
-            for (final String key : vertexProgram.getMemoryComputeKeys()) {
-                MemoryHelper.validateKey(key);
-                this.memoryKeys.add(key);
+            for (final MemoryComputeKey key : vertexProgram.getMemoryComputeKeys()) {
+                MemoryHelper.validateKey(key.getKey());
+                this.memoryKeys.add(key.getKey());
             }
         }
         for (final MapReduce mapReduce : mapReducers) {
@@ -94,19 +92,19 @@ public class FulgoraMemory implements Memory.Admin {
             return r;
     }
 
-    @Override
+    //    @Override
     public void incr(final String key, final long delta) {
         checkKeyValue(key, delta);
         this.currentMap.compute(key, (k, v) -> null == v ? delta : delta + (Long) v);
     }
 
-    @Override
+    //    @Override
     public void and(final String key, final boolean bool) {
         checkKeyValue(key, bool);
         this.currentMap.compute(key, (k, v) -> null == v ? bool : bool && (Boolean) v);
     }
 
-    @Override
+    //    @Override
     public void or(final String key, final boolean bool) {
         checkKeyValue(key, bool);
         this.currentMap.compute(key, (k, v) -> null == v ? bool : bool || (Boolean) v);
@@ -115,6 +113,11 @@ public class FulgoraMemory implements Memory.Admin {
     @Override
     public void set(final String key, final Object value) {
         checkKeyValue(key, value);
+        this.currentMap.put(key, value);
+    }
+
+    @Override
+    public void add(String key, Object value) throws IllegalArgumentException, IllegalStateException {
         this.currentMap.put(key, value);
     }
 

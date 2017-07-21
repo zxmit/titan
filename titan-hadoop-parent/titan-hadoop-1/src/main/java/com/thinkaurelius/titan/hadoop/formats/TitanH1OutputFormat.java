@@ -53,7 +53,8 @@ public class TitanH1OutputFormat extends OutputFormat<NullWritable, VertexWritab
         if (null == persistableKeys) {
             try {
                 persistableKeys = VertexProgram.createVertexProgram(graph,
-                       ConfUtil.makeApacheConfiguration(taskAttemptContext.getConfiguration())).getElementComputeKeys();
+                        ConfUtil.makeApacheConfiguration(taskAttemptContext.getConfiguration()))
+                        .getMemoryComputeKeys();
                 log.debug("Set persistableKeys={}", Joiner.on(",").join(persistableKeys));
             } catch (Exception e) {
                 log.debug("Unable to detect or instantiate vertex program", e);

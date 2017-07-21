@@ -105,7 +105,7 @@ public abstract class TitanIndexTest extends TitanGraphBaseTest {
     }
 
     private Parameter getTextMapping() {
-        if (indexFeatures.supportsStringMapping(Mapping.TEXT)) return Mapping.TEXT.asParameter();
+        if (indexFeatures.supportsStringMapping(Mapping.TEXT_EN)) return Mapping.TEXT_EN.asParameter();
         else if (indexFeatures.supportsStringMapping(Mapping.TEXTSTRING)) return Mapping.TEXTSTRING.asParameter();
         throw new AssertionError("Text mapping not supported");
     }
@@ -129,7 +129,7 @@ public abstract class TitanIndexTest extends TitanGraphBaseTest {
     public TestName methodName = new TestName();
 
     /**
-     * Tests the {@link com.thinkaurelius.titan.example.GraphOfTheGodsFactory#load(com.thinkaurelius.titan.core.TitanGraph)}
+     * Tests the {@link GraphOfTheGodsFactory#load(TitanGraph)}
      * method used as the standard example that ships with Titan.
      */
     @Test

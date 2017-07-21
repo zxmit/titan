@@ -61,11 +61,6 @@ public class ShortestDistanceVertexProgram extends StaticVertexProgram<Long> {
     }
 
     @Override
-    public Set<String> getElementComputeKeys() {
-        return COMPUTE_KEYS;
-    }
-
-    @Override
     public Optional<MessageCombiner<Long>> getMessageCombiner() {
         return (Optional) ShortestDistanceMessageCombiner.instance();
     }
